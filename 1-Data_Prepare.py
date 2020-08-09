@@ -289,10 +289,22 @@ plt.savefig('Cases_Inflow.png', dpi=1000)
 # Output
 Agg_Trips_1 = pd.read_csv('All_XY_Features_To_R_County_Level_0731_toR.csv', index_col=0)
 Agg_Trips_1.columns
-Agg_Trips_1[['CTFIPS', 'Date', 'TMAX', 'Pct_Age_0_24', 'Pct_Age_25_40',
-             'Pct_Age_40_65', 'Pct_White', 'Pct_Black',
-             'Med_House_Income', 'National_Cases',
-             'Population_density', 'Employment_density',
-             'InFlow_Weight', 'Agg_cases', 'New_cases', 'Risked_WInput',
-             'PRCP_NEW', 'National_Cases_Reopen', 'National_Cases_Close']].to_csv(
-    'All_XY_Features_To_R_County_Level_0731_toR_git.csv', index=False)
+Agg_Trips_1[['CTFIPS', 'CTNAME', 'Date', 'Month', 'Week',
+             'Adj_New_cases', 'Adj_Agg_Cases', 'Enforcement', 'Is_ReOpen', 'PRCP',
+             'TMAX', 'TMIN', 'Pct_Male', 'Pct_Age_0_24', 'Pct_Age_25_40',
+             'Pct_Age_40_65', 'Pct_White', 'Pct_Black', 'Pct_Indian', 'Pct_Asian',
+             'Total_Population', 'Med_House_Income', 'LAT', 'LNG',
+             'LAND', 'Is_Weekend', 'Time_Index', 'National_Cases',
+             'Population_density', 'Employment_density', 'In_Flow', 'InFlow_Weight',
+            'Agg_cases','New_cases', 'STFIPS',  'Risked_WInput', 'STNAME',
+              'PRCP_NEW', 'National_Cases_Reopen', 'National_Cases_Close',
+             'Log_National_Cases', 'Log_National_Cases_Reopen',
+             'Log_National_Cases_Close', 'Log_New_cases', 'Log_InFlow_Weight',
+             'Log_Risked_WInput',
+             'Lag1_Log_National_Cases', 'Lag1_Log_National_Cases_Reopen',
+             'Lag1_Log_National_Cases_Close', 'Lag1_Log_New_cases',
+             'Lag1_Log_InFlow_Weight', 'Lag1_Log_Risked_WInput',
+             'Lag7_Log_National_Cases', 'Lag7_Log_National_Cases_Reopen',
+             'Lag7_Log_National_Cases_Close', 'Lag7_Log_New_cases',
+             'Lag7_Log_InFlow_Weight', 'Lag7_Log_Risked_WInput']].to_csv(
+    'All_XY_Features_To_R_County_Level_0731_toR.csv.gz', compression='gzip', index=False)
