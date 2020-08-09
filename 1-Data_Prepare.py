@@ -285,3 +285,14 @@ ax.set_ylabel('Number of inflow per county (Daily)')
 ax.set_xlabel('Date')
 plt.tight_layout()
 plt.savefig('Cases_Inflow.png', dpi=1000)
+
+# Output
+Agg_Trips_1 = pd.read_csv('All_XY_Features_To_R_County_Level_0731_toR.csv', index_col=0)
+Agg_Trips_1.columns
+Agg_Trips_1[['CTFIPS', 'Date', 'TMAX', 'Pct_Age_0_24', 'Pct_Age_25_40',
+             'Pct_Age_40_65', 'Pct_White', 'Pct_Black',
+             'Med_House_Income', 'National_Cases',
+             'Population_density', 'Employment_density',
+             'InFlow_Weight', 'Agg_cases', 'New_cases', 'Risked_WInput',
+             'PRCP_NEW', 'National_Cases_Reopen', 'National_Cases_Close']].to_csv(
+    'All_XY_Features_To_R_County_Level_0731_toR_git.csv', index=False)
