@@ -139,13 +139,6 @@ ggplot(All_corr_[[2]], aes(x = Date, y = Estimate)) +
   labs(x = "Date", y = "Coeff") +
   theme_bw()
 
-#ggplot(All_corr_[[3]], aes(x = Date, y = Estimate)) +
-#  geom_ribbon(aes(ymin = Estimate - Std.Error, ymax = Estimate + Std.Error), alpha = 0.2, colour = NA) +
-#  geom_line() +
-#  geom_point() +
-#  labs(x = "Date", y = "Coeff") +
-#  theme_bw()
-
 write.csv(All_corr_[[2]], 'National.csv')
 write.csv(All_corr_[[3]], 'National_1.csv')
 Inter_cases <- All_corr_[[1]][All_corr_[[1]]$Response == 'Log_New_cases' &

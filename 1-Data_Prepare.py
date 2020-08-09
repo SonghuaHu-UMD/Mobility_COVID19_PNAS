@@ -285,26 +285,3 @@ ax.set_ylabel('Number of inflow per county (Daily)')
 ax.set_xlabel('Date')
 plt.tight_layout()
 plt.savefig('Cases_Inflow.png', dpi=1000)
-
-myFmt = mdates.DateFormatter('%b-%d')
-Agg_Trips_1.columns
-temp = Agg_Trips_1[['STFIPS', 'InFlow_Weight', 'Date']]
-temp_reopen = temp[temp['STFIPS'].isin([1, 4, 8, 13, 16, 17, 18, 19, 23, 27, 28, 35, 38, 40, 45, 46, 47, 48, 49])]
-temp_close = temp[~temp['STFIPS'].isin([1, 4, 8, 13, 16, 17, 18, 19, 23, 27, 28, 35, 38, 40, 45, 46, 47, 48, 49])]
-sum_temp_reopen = (temp_reopen.groupby(['Date']).sum()['InFlow_Weight'] / 1480).reset_index()
-sum_temp_close = (temp_close.groupby(['Date']).sum()['InFlow_Weight'] / 1625).reset_index()
-sum_temp_reopen['Date'] = pd.to_datetime(sum_temp_reopen['Date'])
-sum_temp_close['Date'] = pd.to_datetime(sum_temp_close['Date'])
-
-fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(8, 5))
-ax.plot(sum_temp_reopen['Date'], sum_temp_reopen['InFlow_Weight'], '-o', color='#10375c', markersize=4, alpha=0.7)
-ax.plot(sum_temp_close['Date'], sum_temp_close['InFlow_Weight'], '->', color='#b83b5e', markersize=4, alpha=0.7)
-ax.xaxis.set_major_formatter(myFmt)
-ax.set_xlim([datetime.date(2020, 2, 1), datetime.date(2020, 6, 13)])
-fig.autofmt_xdate()
-plt.legend(
-    ['"Reopened" counties as of 05/01', '"Locked-down" counties'], frameon=False)
-plt.ylabel('Number of inflow (Daily)')
-plt.xlabel('Date')
-plt.tight_layout()
-plt.savefig('Inflow.png', dpi=1000)

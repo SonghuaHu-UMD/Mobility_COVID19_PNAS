@@ -112,45 +112,6 @@ Agg_Trips_1 = pd.read_csv('All_XY_Features_To_R_County_Level_0731_toR.csv', inde
 Agg_Trips_1['Date'] = pd.to_datetime(Agg_Trips_1['Date'])
 Agg_Trips_1['CTFIPS'] = Agg_Trips_1['CTFIPS'].astype(str).apply(lambda x: x.zfill(5))
 
-# # Split by reopen
-# # 1, 4, 8, 13, 16, 17, 18, 19, 23, 27, 28, 35, 38, 40,45, 46, 47, 48, 49
-# Agg_Trips_1.columns
-# temp = Agg_Trips_1[['STFIPS', 'New_cases', 'Date']]
-# temp_reopen = temp[temp['STFIPS'].isin([1, 4, 8, 13, 16, 17, 18, 19, 23, 27, 28, 35, 38, 40, 45, 46, 47, 48, 49])]
-# temp_close = temp[~temp['STFIPS'].isin([1, 4, 8, 13, 16, 17, 18, 19, 23, 27, 28, 35, 38, 40, 45, 46, 47, 48, 49])]
-# sum_temp_reopen = temp_reopen.groupby(['Date']).sum()['New_cases'].reset_index()
-# sum_temp_close = temp_close.groupby(['Date']).sum()['New_cases'].reset_index()
-# sum_temp_reopen['Date'] = pd.to_datetime(sum_temp_reopen['Date'])
-# sum_temp_close['Date'] = pd.to_datetime(sum_temp_close['Date'])
-# plt.plot(sum_temp_reopen['Date'], sum_temp_reopen['New_cases'])
-# plt.plot(sum_temp_close['Date'], sum_temp_close['New_cases'])
-# sum_temp_reopen.columns = ['Date', 'National_Cases_Reopen']
-# sum_temp_close.columns = ['Date', 'National_Cases_Close']
-#
-# Agg_Trips_1 = Agg_Trips_1.merge(sum_temp_reopen, on='Date', how='left')
-# Agg_Trips_1 = Agg_Trips_1.merge(sum_temp_close, on='Date', how='left')
-# # Agg_Trips_1.groupby(['Date']).sum()[['National_Cases_Reopen', 'National_Cases_Close']].plot()
-#
-# # Lag and Log
-# time_window = 7
-# time_lag = 7
-# # Log
-# for colu in ['National_Cases', 'National_Cases_Reopen', 'National_Cases_Close', 'New_cases', 'InFlow_Weight',
-#              'Risked_WInput', 'Enter_Weight', 'OutFlow_Weight']:
-#     Agg_Trips_1['Log_' + colu] = np.log(Agg_Trips_1[colu])
-# # Lag1
-# for colu in ['National_Cases', 'National_Cases_Reopen', 'National_Cases_Close', 'New_cases', 'InFlow_Weight',
-#              'Risked_WInput', 'Enter_Weight', 'OutFlow_Weight']:
-#     Agg_Trips_1['Lag1_Log_' + colu] = Agg_Trips_1.groupby(['CTFIPS']).shift(1)['Log_' + colu]
-# # Lag7
-# for colu in ['National_Cases', 'National_Cases_Reopen', 'National_Cases_Close', 'New_cases', 'InFlow_Weight',
-#              'Risked_WInput', 'Enter_Weight', 'OutFlow_Weight']:
-#     Agg_Trips_1['Lag7_Log_' + colu] = Agg_Trips_1.groupby(['CTFIPS']).shift(7)['Log_' + colu]
-# Agg_Trips_1 = Agg_Trips_1.replace([np.inf, -np.inf], np.nan)
-# Agg_Trips_1.columns
-#
-# Agg_Trips_1.to_csv('All_XY_Features_To_R_County_Level_0731_toR.csv')
-
 # ALL STATE, Log_InFlow_Weight
 All_corr_Reopen = sem_all_state(Agg_Trips_1, """ Log_New_cases ~ Log_InFlow_Weight + Lag1_Log_New_cases + Is_Weekend  + Population_density  + Pct_Age_0_24 + Pct_Age_25_40 + Pct_Age_40_65
         Log_InFlow_Weight ~  Log_National_Cases + Lag1_Log_InFlow_Weight + Is_Weekend + Population_density + Employment_density + PRCP + TMAX  + Pct_Age_0_24 + Pct_Age_25_40 + Pct_Age_40_65 +  Med_House_Income  + Pct_Black + Pct_White
