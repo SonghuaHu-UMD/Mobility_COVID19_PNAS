@@ -21,11 +21,11 @@ https://coronavirus.jhu.edu/us-map
 
 ## Methodology
 To capture the time-varying relationship between the number of infection and mobility inflow, we have developed a simultaneous equations model with time-varying coefficients. The main results are reported in the main manuscripts, while the details are reported in the supplementary, including:
-* 1.	Details of mobility metrics
-* 2.	Number of New cases and Inflow varying in reopen states 
-* 3.	Optimal Lag
-* 4.	Model performance 
-* 5.	Model Interpretation
-* 6.	Other methods: BSTS 
-* 7.	Other variables: the risked inflow
+* Details of mobility metrics
+* Number of New cases and Inflow varying in reopen states 
+* Optimal Lag
+* Model performance 
+* Model Interpretation
+* Other methods: BSTS 
+* Other variables: the risked inflow
 
