@@ -6,5 +6,14 @@ Accurately estimating human mobility and gauging its relationship with virus tra
 https://github.com/SonghuaHu-UMD/Mobility_COVID19_PNAS/tree/master/Data
 * Other mobility data can be found at:
 https://data.covid.umd.edu/
-* COVID-19 cases data are download from:
+* COVID-19 cases data can be download from:
 https://coronavirus.jhu.edu/us-map
+
+## Code
+* 1-Data_Prepare.py: Finish the data preprocessing.
+* 2-SEM_Fit.R: Build the dynamic SEM model in R.
+* 3-Plot.py: Visulize the results.
+* Optimal_Lag.R: Find the optimal lag for SEM models.
+* Prediction_Compare.R: Compare the model performance with/without mobility features, also test the prediction performance with differnt models.
+* SEM_IN_PYTHON.py: A similar SEM model fit processing in Python.
+* SEM_PANEL.R: Build a mixed-effect panel model with SEM struture.
