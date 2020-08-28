@@ -10,6 +10,7 @@ library(piecewiseSEM)
 library(nlme)
 library(lme4)
 library(mgcv)
+library(zoo)
 
 # Read DATA
 Agg_Trips_1 <- read.csv('D:/COVID-19/PNAS_SECOND/All_XY_Features_To_R_County_Level_0731_toR.csv')
@@ -34,16 +35,16 @@ Agg_Trips_1 <- Agg_Trips_1 %>%
 Agg_Trips_1 <- Agg_Trips_1 %>%
   group_by(CTFIPS) %>%
   mutate(Lag7_Log_National_Cases_Close = dplyr::lag(Log_National_Cases_Close, n = 7, default = NA))
-Agg_Trips_1 <- Agg_Trips_1 %>%
-  group_by(CTFIPS) %>%
-  mutate(Lag7_Log_New_cases = dplyr::lag(Log_New_cases, n = 7, default = NA))
+#Agg_Trips_1 <- Agg_Trips_1 %>%
+#  group_by(CTFIPS) %>%
+#  mutate(Lag7_Log_New_cases = dplyr::lag(Log_New_cases, n = 7, default = NA))
 Agg_Trips_1 <- Agg_Trips_1 %>%
   group_by(CTFIPS) %>%
   mutate(Lag7_PRCP_NEW = dplyr::lag(PRCP_NEW, n = 7, default = NA))
 Agg_Trips_1 <- Agg_Trips_1 %>%
   group_by(CTFIPS) %>%
   mutate(Lag7_TMAX = dplyr::lag(TMAX, n = 7, default = NA))
-Agg_Trips_1 <- subset(Agg_Trips_1, select = -c(New_cases_rate))
+Agg_Trips_1 <- subset(Agg_Trips_1, select = -c(New_cases_rate, Lag7_Log_Risked_WInput))
 colSums(is.na(Agg_Trips_1))
 
 # SEM PANEL MODEL
@@ -56,47 +57,55 @@ All_State_SEM_Panel <- function(Max_Day, Agg_Trips_1, time_window, xvar) {
   for (jj in (1:(Max_Day - 7))) {
     print(jj)
     skip_to_next <- FALSE
-    Agg_Trips_tem <- Agg_Trips_1[(Agg_Trips_1$Date <= Start_date + time_window) &
-                                   (Agg_Trips_1$Date > Start_date) &
+    Agg_Trips_tem <- Agg_Trips_1[(Agg_Trips_1$Date < Start_date + time_window) &
+                                   (Agg_Trips_1$Date >= Start_date) &
                                    (Agg_Trips_1$New_cases > 0) &
                                    (Agg_Trips_1$InFlow_Weight > 0),]
+    Agg_Trips_tem <-
+      subset(Agg_Trips_tem, select
+        = c(Log_New_cases, Lag7_Log_InFlow_Weight, Lag1_Log_New_cases, Is_Weekend, Population_density, Pct_Age_0_24, Pct_Age_25_40,
+            Pct_Age_25_40, Pct_Age_40_65, Med_House_Income, Lag7_Log_InFlow_Weight, Lag7_Log_National_Cases, Lag8_Log_InFlow_Weight,
+            Lag7_PRCP_NEW, Lag7_TMAX, Pct_Black, Pct_White, Employment_density))
     Agg_Trips_tem <- na.omit(Agg_Trips_tem)
+    #Agg_Trips_tem[is.na(Agg_Trips_tem)] <- 0
+
     rownames(Agg_Trips_tem) <- NULL
     tryCatch({
-               model.list <- list(
-                 lm(Log_New_cases ~ Lag7_Log_InFlow_Weight +
-                   Lag1_Log_New_cases +
-                   Is_Weekend +
-                   Population_density +
-                   Pct_Age_0_24 +
-                   Pct_Age_25_40 +
-                   Pct_Age_40_65 +
-                   Med_House_Income, na.action = na.omit, data = Agg_Trips_tem),
-                 lm(Lag7_Log_InFlow_Weight ~ Lag7_Log_National_Cases +
-                   Lag8_Log_InFlow_Weight +
-                   Is_Weekend +
-                   Population_density +
-                   Employment_density +
-                   Lag7_PRCP_NEW +
-                   Lag7_TMAX +
-                   Pct_Age_0_24 +
-                   Pct_Age_25_40 +
-                   Pct_Age_40_65 +
-                   Med_House_Income +
-                   Pct_Black +
-                   Pct_White, na.action = na.omit, data = Agg_Trips_tem))
-               fit <- as.psem(model.list) # ,orthogonal = TRUE,std.lv = TRUE
-               new.summary <- summary(fit, .progressBar = F, rsq = T)
-               #fitMeasures(fit)
-               #residuals(fit)
-               para <- coefs(fit, standardize = "scale", intercepts = TRUE)
-               #anova(fit, fit.partial)
-               #para <- (new.summary$coefficients)
-               para$Date <- Start_date
-               All_corr_Reopen[[jj]] <- para
-               All_perform[[jj]] <- new.summary$R2
-             },
-             error = function(e) { skip_to_next <<- TRUE })
+      model.list <- list(
+        lm(Log_New_cases ~ Lag7_Log_InFlow_Weight +
+          Lag1_Log_New_cases +
+          Is_Weekend +
+          Population_density +
+          Pct_Age_0_24 +
+          Pct_Age_25_40 +
+          Pct_Age_40_65 +
+          Med_House_Income, na.action = na.omit, data = Agg_Trips_tem),
+        lm(Lag7_Log_InFlow_Weight ~
+             Lag7_Log_National_Cases +
+             Lag8_Log_InFlow_Weight +
+               Is_Weekend +
+               Population_density +
+               Employment_density +
+               Lag7_PRCP_NEW +
+               Lag7_TMAX +
+               Pct_Age_0_24 +
+               Pct_Age_25_40 +
+               Pct_Age_40_65 +
+               Med_House_Income +
+               Pct_Black +
+               Pct_White, na.action = na.omit, data = Agg_Trips_tem))
+      fit <- as.psem(model.list) # ,orthogonal = TRUE,std.lv = TRUE
+      new.summary <- summary(fit, .progressBar = F, rsq = T)
+      #fitMeasures(fit)
+      #residuals(fit)
+      para <- coefs(fit, standardize = "scale", intercepts = TRUE)
+      #anova(fit, fit.partial)
+      #para <- (new.summary$coefficients)
+      para$Date <- Start_date
+      All_corr_Reopen[[jj]] <- para
+      All_perform[[jj]] <- new.summary$R2
+    },
+      error = function(e) { skip_to_next <<- TRUE })
     Start_date <- Start_date + 1
     if (skip_to_next) { next }
   }
@@ -120,7 +129,7 @@ All_State_SEM_Panel <- function(Max_Day, Agg_Trips_1, time_window, xvar) {
   return(list_result)
 }
 
-All_corr_ <- All_State_SEM_Panel(Max_Day, Agg_Trips_1, time_window, xvar = 'Lag7_Log_InFlow_Weight')
+All_corr_ <- All_State_SEM_Panel(Max_Day, Agg_Trips_1, 7, xvar = 'Lag7_Log_InFlow_Weight')
 
 All_corr_perform <- do.call(rbind.data.frame, All_corr_[[4]])
 mean(All_corr_perform[All_corr_perform$Response == 'Log_New_cases', 'R.squared'])
@@ -138,6 +147,9 @@ ggplot(All_corr_[[2]], aes(x = Date, y = Estimate)) +
   geom_point() +
   labs(x = "Date", y = "Coeff") +
   theme_bw()
+
+#All_corr_date <- zoo(All_corr_[[2]]$Estimate, All_corr_[[2]]$Date)
+#plot(rollmean(All_corr_date, 7))
 
 write.csv(All_corr_[[2]], 'National.csv')
 write.csv(All_corr_[[3]], 'National_1.csv')
@@ -178,81 +190,82 @@ Split_State_SEM_Panel <- function(Max_Day, Agg_Trips_1, time_window, xvar, Idea_
     Agg_Trips_tem <- select(Agg_Trips_tem, Log_New_cases, Lag7_Log_InFlow_Weight, Lag1_Log_New_cases, Is_Weekend,
                             Population_density, Pct_Age_0_24, Pct_Age_25_40, Pct_Age_40_65, Med_House_Income,
                             Lag7_Log_InFlow_Weight, Lag7_Log_National_Cases_Reopen, Lag7_Log_National_Cases_Close,
-                            Lag8_Log_InFlow_Weight,
-                            Employment_density, Lag7_PRCP_NEW, Lag7_TMAX,
-                            Pct_Black, Pct_White, Is_ReopenState)
+                            Lag8_Log_InFlow_Weight, Employment_density, Lag7_PRCP_NEW, Lag7_TMAX,
+                            Pct_Black, Pct_White, Is_ReopenState, Week)
+
     Agg_Trips_tem <- na.omit(Agg_Trips_tem)
     nums <- unlist(lapply(Agg_Trips_tem, is.numeric))
     rownames(Agg_Trips_tem) <- NULL
+    #Agg_Trips_tem$CTFIPS <- as.factor(Agg_Trips_tem$CTFIPS)
     Reopen_tem <- Agg_Trips_tem[Agg_Trips_tem$Is_ReopenState,]
     Close_tem <- Agg_Trips_tem[!Agg_Trips_tem$Is_ReopenState,]
     tryCatch({
-               #Reopen_tem <- aggregate(Reopen_tem[,nums], list(Reopen_tem$CTFIPS), mean, na.action = na.omit)
-               #Close_tem <- aggregate(Close_tem[,nums], list(Close_tem$CTFIPS), mean, na.action = na.omit)
-               model.list <- list(
-                 lm(Log_New_cases ~ 1 +
-                   Lag7_Log_InFlow_Weight +
-                   Lag1_Log_New_cases +
-                   Is_Weekend +
-                   Population_density +
-                   Pct_Age_0_24 +
-                   Pct_Age_25_40 +
-                   Pct_Age_40_65 +
-                   Med_House_Income, na.action = na.omit, data = Reopen_tem),
-                 lm(Lag7_Log_InFlow_Weight ~ 1 +
-                   Lag7_Log_National_Cases_Reopen +
-                   Lag8_Log_InFlow_Weight +
-                   Is_Weekend +
-                   Population_density +
-                   Employment_density +
-                   Lag7_PRCP_NEW +
-                   Lag7_TMAX +
-                   Pct_Age_0_24 +
-                   Pct_Age_25_40 +
-                   Pct_Age_40_65 +
-                   Med_House_Income +
-                   Pct_Black +
-                   Pct_White, na.action = na.omit, data = Reopen_tem))
-               model.list1 <- list(
-                 lm(Log_New_cases ~ 1 +
-                   Lag7_Log_InFlow_Weight +
-                   Lag1_Log_New_cases +
-                   Is_Weekend +
-                   Population_density +
-                   Pct_Age_0_24 +
-                   Pct_Age_25_40 +
-                   Pct_Age_40_65 +
-                   Med_House_Income, na.action = na.omit, data = Close_tem),
-                 lm(Lag7_Log_InFlow_Weight ~ 1 +
-                   Lag7_Log_National_Cases_Close +
-                   Lag8_Log_InFlow_Weight +
-                   Is_Weekend +
-                   Population_density +
-                   Employment_density +
-                   Lag7_PRCP_NEW +
-                   Lag7_TMAX +
-                   Pct_Age_0_24 +
-                   Pct_Age_25_40 +
-                   Pct_Age_40_65 +
-                   Med_House_Income +
-                   Pct_Black +
-                   Pct_White, na.action = na.omit, data = Close_tem))
+      #Reopen_tem <- aggregate(Reopen_tem[,nums], list(Reopen_tem$CTFIPS), mean, na.action = na.omit)
+      #Close_tem <- aggregate(Close_tem[,nums], list(Close_tem$CTFIPS), mean, na.action = na.omit)
+      model.list <- list(
+        lm(Log_New_cases ~ 1 +
+          Lag7_Log_InFlow_Weight +
+          Lag1_Log_New_cases +
+          Is_Weekend +
+          Population_density +
+          Pct_Age_0_24 +
+          Pct_Age_25_40 +
+          Pct_Age_40_65 +
+          Med_House_Income, na.action = na.omit, data = Reopen_tem),
+        lm(Lag7_Log_InFlow_Weight ~ 1 +
+          Lag7_Log_National_Cases_Reopen +
+          Lag8_Log_InFlow_Weight +
+          Is_Weekend +
+          Population_density +
+          Employment_density +
+          Lag7_PRCP_NEW +
+          Lag7_TMAX +
+          Pct_Age_0_24 +
+          Pct_Age_25_40 +
+          Pct_Age_40_65 +
+          Med_House_Income +
+          Pct_Black +
+          Pct_White, na.action = na.omit, data = Reopen_tem))
+      model.list1 <- list(
+        lm(Log_New_cases ~ 1 +
+          Lag7_Log_InFlow_Weight +
+          Lag1_Log_New_cases +
+          Is_Weekend +
+          Population_density +
+          Pct_Age_0_24 +
+          Pct_Age_25_40 +
+          Pct_Age_40_65 +
+          Med_House_Income, na.action = na.omit, data = Close_tem),
+        lm(Lag7_Log_InFlow_Weight ~ 1 +
+          Lag7_Log_National_Cases_Close +
+          Lag8_Log_InFlow_Weight +
+          Is_Weekend +
+          Population_density +
+          Employment_density +
+          Lag7_PRCP_NEW +
+          Lag7_TMAX +
+          Pct_Age_0_24 +
+          Pct_Age_25_40 +
+          Pct_Age_40_65 +
+          Med_House_Income +
+          Pct_Black +
+          Pct_White, na.action = na.omit, data = Close_tem))
 
-               fit <- as.psem(model.list)  # ,orthogonal = TRUE,std.lv = TRUE
-               fit1 <- as.psem(model.list1)  # ,orthogonal = TRUE,std.lv = TRUE
-               new.summary <- summary(fit, .progressBar = F, rsq = T)
-               new.summary1 <- summary(fit1, .progressBar = F, rsq = T)
-               #anova(fit, fit.partial)
-               para <- coefs(fit, standardize = "scale", intercepts = TRUE)
-               para1 <- coefs(fit1, standardize = "scale", intercepts = TRUE)
-               para$Date <- Start_date
-               para1$Date <- Start_date
-               All_corr_Reopen[[jj]] <- para
-               All_corr_Close[[jj]] <- para1
-               All_perform[[jj]] <- new.summary$R2
-               All_perform1[[jj]] <- new.summary1$R2
-             },
-             error = function(e) { skip_to_next <<- TRUE })
+      fit <- as.psem(model.list)  # ,orthogonal = TRUE,std.lv = TRUE
+      fit1 <- as.psem(model.list1)  # ,orthogonal = TRUE,std.lv = TRUE
+      new.summary <- summary(fit, .progressBar = F, rsq = T)
+      new.summary1 <- summary(fit1, .progressBar = F, rsq = T)
+      #anova(fit, fit.partial)
+      para <- coefs(fit, standardize = "scale", intercepts = TRUE)
+      para1 <- coefs(fit1, standardize = "scale", intercepts = TRUE)
+      para$Date <- Start_date
+      para1$Date <- Start_date
+      All_corr_Reopen[[jj]] <- para
+      All_corr_Close[[jj]] <- para1
+      All_perform[[jj]] <- new.summary$R2
+      All_perform1[[jj]] <- new.summary1$R2
+    },
+      error = function(e) { skip_to_next <<- TRUE })
     Start_date <- Start_date + 1
     if (skip_to_next) { next }
   }
@@ -295,9 +308,14 @@ Split_State_SEM_Panel <- function(Max_Day, Agg_Trips_1, time_window, xvar, Idea_
 
 # c(12, 6, 22, 13, 1, 17, 4, 47, 37, 45, 32, 51)
 # c(1, 4, 8, 13, 16, 17, 18, 19, 23, 27, 28, 35, 38, 40,45, 46, 47, 48, 49)
-All_corr_ <- Split_State_SEM_Panel(Max_Day, Agg_Trips_1, time_window,
+All_corr_ <- Split_State_SEM_Panel(Max_Day, Agg_Trips_1, 7,
                                    xvar = 'Lag7_Log_InFlow_Weight',
                                    Idea_Reopen_State = c(1, 4, 8, 13, 16, 17, 18, 19, 23, 27, 28, 35, 38, 40, 45, 46, 47, 48, 49))
+#All_corr_date_open <- zoo(All_corr_[[3]]$Estimate, All_corr_[[3]]$Date)
+#All_corr_date_close <- zoo(All_corr_[[4]]$Estimate, All_corr_[[4]]$Date)
+#plot(rollmean(All_corr_date_open, 7), col = 'blue', ylim = c(0.1, 0.35))
+#lines(rollmean(All_corr_date_close, 7), col = 'red')
+
 #str(All_corr_[[4]])
 All_corr_perform <- do.call(rbind.data.frame, All_corr_[[8]])
 mean(All_corr_perform[All_corr_perform$Response == 'Log_New_cases', 'R.squared'])
