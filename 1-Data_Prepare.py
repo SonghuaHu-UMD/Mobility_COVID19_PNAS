@@ -298,6 +298,7 @@ plt.savefig('Figure 2a.png', dpi=1000)
 
 # Output
 Agg_Trips_1 = pd.read_csv('All_XY_Features_To_R_County_Level_0731_toR.csv', index_col=0)
+Agg_Trips_1['National_Cases'] = Agg_Trips_1['National_Cases'] / 1e3
 Agg_Trips_1.columns
 Agg_Trips_1[['CTFIPS', 'CTNAME', 'Date', 'Month', 'Week',
              'Adj_New_cases', 'Adj_Agg_Cases', 'Enforcement', 'Is_ReOpen', 'PRCP',
