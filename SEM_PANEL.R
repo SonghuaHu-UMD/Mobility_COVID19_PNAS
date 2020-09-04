@@ -19,6 +19,7 @@ Agg_Trips_1$Is_ReopenState <- TRUE
 Agg_Trips_1$Date <- as.Date(Agg_Trips_1$Date)
 Start_date <- as.Date('2020-03-10')
 Max_Day <- as.numeric(difftime(max(Agg_Trips_1$Date), Start_date, units = 'days'))
+Agg_Trips_1$TSFIPS <- 1
 time_window <- 7
 Agg_Trips_1$Pct_Age_25_65 <- Agg_Trips_1$Pct_Age_25_40 + Agg_Trips_1$Pct_Age_40_65
 
@@ -66,7 +67,7 @@ All_State_SEM_Panel <- function(Max_Day, Agg_Trips_1, time_window, xvar) {
       subset(Agg_Trips_tem, select
         = c(Log_New_cases, Lag7_Log_InFlow_Weight, Lag1_Log_New_cases, Is_Weekend, Population_density, Pct_Age_0_24, Pct_Age_25_40,
             Pct_Age_25_40, Pct_Age_40_65, Med_House_Income, Lag7_Log_InFlow_Weight, Lag7_Log_National_Cases, Lag8_Log_InFlow_Weight,
-            Lag7_PRCP_NEW, Lag7_TMAX, Pct_Black, Pct_White, Employment_density, CTFIPS))
+            Lag7_PRCP_NEW, Lag7_TMAX, Pct_Black, Pct_White, Employment_density, CTFIPS, Week))
     Agg_Trips_tem <- na.omit(Agg_Trips_tem)
     rownames(Agg_Trips_tem) <- NULL
     tryCatch({
@@ -162,7 +163,7 @@ Split_State_SEM_Panel <- function(Max_Day, Agg_Trips_1, time_window, xvar, Idea_
                             Population_density, Pct_Age_0_24, Pct_Age_25_40, Pct_Age_40_65, Med_House_Income,
                             Lag7_Log_InFlow_Weight, Lag7_Log_National_Cases_Reopen, Lag7_Log_National_Cases_Close,
                             Lag8_Log_InFlow_Weight, Employment_density, Lag7_PRCP_NEW, Lag7_TMAX,
-                            Pct_Black, Pct_White, Is_ReopenState, Week)
+                            Pct_Black, Pct_White, Is_ReopenState, Week, TSFIPS)
 
     Agg_Trips_tem <- na.omit(Agg_Trips_tem)
     rownames(Agg_Trips_tem) <- NULL

@@ -252,6 +252,7 @@ Agg_Trips_1.to_csv('All_XY_Features_To_R_County_Level_0731_toR.csv')
 
 # Plot cases and flow
 # How many counties
+Agg_Trips_1 = pd.read_csv('All_XY_Features_To_R_County_Level_0731_toR.csv')
 temp_county = Agg_Trips_1[['STFIPS', 'CTFIPS', 'New_cases', 'Date']]
 print(len(set(
     temp_county[temp_county['STFIPS'].isin([1, 4, 8, 13, 16, 17, 18, 19, 23, 27, 28, 35, 38, 40, 45, 46, 47, 48, 49])][
@@ -268,23 +269,32 @@ sum_temp_close = temp_close.groupby(['Date']).sum()[['New_cases', 'InFlow_Weight
 sum_temp_reopen['Date'] = pd.to_datetime(sum_temp_reopen['Date'])
 sum_temp_close['Date'] = pd.to_datetime(sum_temp_close['Date'])
 
+myFmt = mdates.DateFormatter('%b-%d')
 fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(8, 5))
-ax.plot(sum_temp_reopen['Date'], sum_temp_reopen['InFlow_Weight'] / 1480, '-o', color='#10375c', markersize=3,
-        alpha=1)
-ax.plot(sum_temp_close['Date'], sum_temp_close['InFlow_Weight'] / 1625, '->', color='#b83b5e', markersize=3, alpha=1)
+ln1 = ax.plot(sum_temp_reopen['Date'], sum_temp_reopen['InFlow_Weight'] / 1480, '-o', color='#10375c', markersize=3,
+              alpha=1)
+ln2 = ax.plot(sum_temp_close['Date'], sum_temp_close['InFlow_Weight'] / 1625, '->', color='#b83b5e', markersize=3,
+              alpha=1)
+plt.legend(['Inflow ("Reopened" counties as of 05/01)', 'Inflow ("Locked-down" counties)'], frameon=False,
+           loc=(.45, .86))
 ax.xaxis.set_major_formatter(myFmt)
+ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useMathText=True)
 ax2 = ax.twinx()
-ax2.bar(sum_temp_reopen['Date'], sum_temp_reopen['New_cases'] / 1480, color='#10375c', alpha=0.2)
-ax2.bar(sum_temp_close['Date'], sum_temp_close['New_cases'] / 1625, bottom=sum_temp_reopen['New_cases'] / 1480,
-        color='#b83b5e', alpha=0.2)
+ln3 = ax2.bar(sum_temp_reopen['Date'], sum_temp_reopen['New_cases'] / 1480, color='#10375c', alpha=0.2)
+ln4 = ax2.bar(sum_temp_close['Date'], sum_temp_close['New_cases'] / 1625, bottom=sum_temp_reopen['New_cases'] / 1480,
+              color='#b83b5e', alpha=0.2)
 ax.set_xlim([datetime.date(2020, 2, 1), datetime.date(2020, 6, 10)])
-fig.autofmt_xdate()
-plt.legend(['"Reopened" counties as of 05/01', '"Locked-down" counties'], frameon=False, loc=1)
+ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=3))
+# fig.autofmt_xdate()
+plt.legend(['Cases ("Reopened" counties as of 05/01)', 'Cases ("Locked-down" counties)'], frameon=False, loc=(.45, .75))
 ax2.set_ylabel('Number of new cases per county (Daily)')
 ax.set_ylabel('Number of inflow per county (Daily)')
 ax.set_xlabel('Date')
+ax.set_ylim([0.2 * 1e5, 1.1 * 1e5])
+ax2.set_ylim([0, 30])
 plt.tight_layout()
-plt.savefig('Cases_Inflow.png', dpi=1000)
+plt.savefig('Figure 2a.pdf', dpi=1000)
+plt.savefig('Figure 2a.png', dpi=1000)
 
 # Output
 Agg_Trips_1 = pd.read_csv('All_XY_Features_To_R_County_Level_0731_toR.csv', index_col=0)
@@ -296,8 +306,8 @@ Agg_Trips_1[['CTFIPS', 'CTNAME', 'Date', 'Month', 'Week',
              'Total_Population', 'Med_House_Income', 'LAT', 'LNG',
              'LAND', 'Is_Weekend', 'Time_Index', 'National_Cases',
              'Population_density', 'Employment_density', 'In_Flow', 'InFlow_Weight',
-            'Agg_cases','New_cases', 'STFIPS',  'Risked_WInput', 'STNAME',
-              'PRCP_NEW', 'National_Cases_Reopen', 'National_Cases_Close',
+             'Agg_cases', 'New_cases', 'STFIPS', 'Risked_WInput', 'STNAME',
+             'PRCP_NEW', 'National_Cases_Reopen', 'National_Cases_Close',
              'Log_National_Cases', 'Log_National_Cases_Reopen',
              'Log_National_Cases_Close', 'Log_New_cases', 'Log_InFlow_Weight',
              'Log_Risked_WInput',
