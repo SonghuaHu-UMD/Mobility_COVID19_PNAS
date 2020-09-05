@@ -21,6 +21,34 @@ AllCounty <- unique(Agg_Trips_1$CTFIPS)
 plot(Agg_Trips_1[(Agg_Trips_1$CTFIPS == 1003) & (Agg_Trips_1$Date >= Start_date), 'National_Cases'])
 adf.test(Agg_Trips_1[(Agg_Trips_1$CTFIPS == 1003) & (Agg_Trips_1$Date >= Start_date), 'National_Cases'], alternative = 'stationary')
 
+
+# Moving bandwidth, each county
+ccount <- 1
+County_P <- c()
+for (jj in AllCounty) {
+  #jj <- 1001
+  print(jj)
+  dat_Each <- Agg_Trips_1[Agg_Trips_1$CTFIPS == jj,]
+  Start_date <- as.Date('2020-03-10')
+  for (ii in (1:(Max_Day - 7))) {
+    Agg_Trips_tem <- dat_Each[(dat_Each$Date <= Start_date + time_window) &
+                                (dat_Each$Date > Start_date), 'Log_New_cases']
+    Agg_Trips_tem <- na.omit(Agg_Trips_tem)
+    if (length(Agg_Trips_tem) > 3) {
+      tem <- adf.test(Agg_Trips_tem, alternative = 'stationary')
+      County_P[[ccount]] <- tem$p.value
+    }
+    else { County_P[[ccount]] <- 0 }
+    ccount <- ccount + 1
+    Start_date <- Start_date + 1
+  }
+}
+County_P_Fianl <- (do.call(rbind, County_P))
+County_P_Fianl[is.na(County_P_Fianl)] <- 0
+summary(County_P_Fianl)
+1 - length(County_P_Fianl[County_P_Fianl >= 0.05]) / length(County_P_Fianl)
+
+
 # Entire stationary for each county
 AllCounty_P <- c()
 ccount <- 1
@@ -55,29 +83,3 @@ for (jj in (1:(Max_Day - 7))) {
 }
 Nation_p_Fianl <- (do.call(rbind, Nation_p))
 summary(Nation_p_Fianl)
-
-# Moving bandwidth, each county
-ccount <- 1
-County_P <- c()
-for (jj in AllCounty) {
-  #jj <- 1001
-  print(jj)
-  dat_Each <- Agg_Trips_1[Agg_Trips_1$CTFIPS == jj,]
-  Start_date <- as.Date('2020-03-10')
-  for (ii in (1:(Max_Day - 7))) {
-    Agg_Trips_tem <- dat_Each[(dat_Each$Date <= Start_date + time_window) &
-                                (dat_Each$Date > Start_date), 'Log_New_cases']
-    Agg_Trips_tem <- na.omit(Agg_Trips_tem)
-    if (length(Agg_Trips_tem) > 3) {
-      tem <- adf.test(Agg_Trips_tem, alternative = 'stationary')
-      County_P[[ccount]] <- tem$p.value
-    }
-    else { County_P[[ccount]] <- 0 }
-    ccount <- ccount + 1
-    Start_date <- Start_date + 1
-  }
-}
-County_P_Fianl <- (do.call(rbind, County_P))
-County_P_Fianl[is.na(County_P_Fianl)] <- 0
-summary(County_P_Fianl)
-1-length(County_P_Fianl[County_P_Fianl >= 0.05]) / length(County_P_Fianl)
