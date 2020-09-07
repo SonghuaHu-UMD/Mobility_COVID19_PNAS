@@ -18,6 +18,7 @@ https://coronavirus.jhu.edu/us-map
 * Prediction_Compare.R: Compare the model performance with/without mobility features, also commpare the prediction performance of different models.
 * SEM_IN_PYTHON.py: A similar SEM model fit processing in Python.
 * SEM_PANEL.R: Build a mixed-effect panel model with SEM structure.
+* Stationary_Test.R: Test the time-series stationary.
 
 ## Methodology
 To capture the time-varying relationship between the number of infection and mobility inflow, we have developed a simultaneous equations model with time-varying coefficients. The main results are reported in the main manuscripts, while the details are reported in the supplementary, including:
