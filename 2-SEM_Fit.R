@@ -13,7 +13,7 @@ library(mgcv)
 library(zoo)
 
 # Read DATA
-Agg_Trips_1 <- read.csv('D:/COVID-19/PNAS_SECOND/All_XY_Features_To_R_County_Level_0731_toR.csv')
+Agg_Trips_1 <- read.csv(Sys.getenv('PNAS_DATA_PATH', 'Data/All_XY_Features_To_R_County_Level_0731_toR.csv.gz'))
 Agg_Trips_1 <- Agg_Trips_1[with(Agg_Trips_1, order(CTFIPS, Date)),]
 Agg_Trips_1$Is_ReopenState <- TRUE
 Agg_Trips_1$Date <- as.Date(Agg_Trips_1$Date)
@@ -44,89 +44,84 @@ Agg_Trips_1 <- Agg_Trips_1 %>%
 Agg_Trips_1 <- Agg_Trips_1 %>%
   group_by(CTFIPS) %>%
   mutate(Lag7_TMAX = dplyr::lag(TMAX, n = 7, default = NA))
-Agg_Trips_1 <- subset(Agg_Trips_1, select = -c(New_cases_rate, Lag7_Log_Risked_WInput))
+Agg_Trips_1 <- Agg_Trips_1[, setdiff(names(Agg_Trips_1), c('New_cases_rate', 'Lag7_Log_Risked_WInput'))]
 colSums(is.na(Agg_Trips_1))
 
 # SEM PANEL MODEL
 # A function for all state
-All_State_SEM_Panel <- function(Max_Day, Agg_Trips_1, time_window, xvar) {
-  # RUN LOOP
-  All_corr_Reopen <- c()
-  All_perform <- c()
-  Start_date <- as.Date('2020-03-10')
-  for (jj in (1:(Max_Day - 7))) {
-    print(jj)
-    skip_to_next <- FALSE
-    Agg_Trips_tem <- Agg_Trips_1[(Agg_Trips_1$Date < Start_date + time_window) &
-                                   (Agg_Trips_1$Date >= Start_date) &
-                                   (Agg_Trips_1$New_cases > 0) &
-                                   (Agg_Trips_1$InFlow_Weight > 0),]
-    Agg_Trips_tem <-
-      subset(Agg_Trips_tem, select
-        = c(Log_New_cases, Lag7_Log_InFlow_Weight, Lag1_Log_New_cases, Is_Weekend, Population_density, Pct_Age_0_24, Pct_Age_25_40,
-            Pct_Age_25_40, Pct_Age_40_65, Med_House_Income, Lag7_Log_InFlow_Weight, Lag7_Log_National_Cases, Lag8_Log_InFlow_Weight,
-            Lag7_PRCP_NEW, Lag7_TMAX, Pct_Black, Pct_White, Employment_density))
-    Agg_Trips_tem <- na.omit(Agg_Trips_tem)
-    #Agg_Trips_tem[is.na(Agg_Trips_tem)] <- 0
-
-    rownames(Agg_Trips_tem) <- NULL
-    tryCatch({
-      model.list <- list(
-        lm(Log_New_cases ~ Lag7_Log_InFlow_Weight +
-          Lag1_Log_New_cases +
-          Is_Weekend +
-          Population_density +
-          Pct_Age_0_24 +
-          Pct_Age_25_40 +
-          Pct_Age_40_65 +
-          Med_House_Income, na.action = na.omit, data = Agg_Trips_tem),
-        lm(Lag7_Log_InFlow_Weight ~
-             Lag7_Log_National_Cases +
-             Lag8_Log_InFlow_Weight +
-               Is_Weekend +
-               Population_density +
-               Employment_density +
-               Lag7_PRCP_NEW +
-               Lag7_TMAX +
-               Pct_Age_0_24 +
-               Pct_Age_25_40 +
-               Pct_Age_40_65 +
-               Med_House_Income +
-               Pct_Black +
-               Pct_White, na.action = na.omit, data = Agg_Trips_tem))
-      fit <- as.psem(model.list) # ,orthogonal = TRUE,std.lv = TRUE
-      new.summary <- summary(fit, .progressBar = F, rsq = T)
-      #fitMeasures(fit)
-      #residuals(fit)
-      para <- coefs(fit, standardize = "scale", intercepts = TRUE)
-      #anova(fit, fit.partial)
-      #para <- (new.summary$coefficients)
-      para$Date <- Start_date
-      All_corr_Reopen[[jj]] <- para
-      All_perform[[jj]] <- new.summary$R2
-    },
-      error = function(e) { skip_to_next <<- TRUE })
-    Start_date <- Start_date + 1
-    if (skip_to_next) { next }
+# Complete coefficient series; failures remain NA and are logged.
+validate_window <- function(time_window) {
+  if (length(time_window) != 1 || !is.finite(time_window) ||
+      time_window < 1 || time_window != as.integer(time_window)) stop("Invalid time_window")
+}
+curve <- function(tab, dates, response, predictor) {
+  selected <- tab[tab$Response == response & tab$Predictor == predictor, , drop=FALSE]
+  out <- merge(data.frame(Date=dates), selected, by="Date", all.x=TRUE, sort=TRUE)
+  out$Significant_0_1 <- !is.na(out$P.Value) & out$P.Value < 0.1
+  out
+}
+fit_panel_windows <- function(Max_Day, data, time_window, xvar, states=NULL) {
+  validate_window(time_window)
+  dates <- as.Date("2020-03-10") + seq_len(max(0, Max_Day - time_window)) - 1
+  groups <- if (is.null(states)) "National" else c("Reopen", "Close")
+  coeff <- setNames(lapply(groups, function(g) list()), groups)
+  performance <- setNames(lapply(groups, function(g) list()), groups)
+  logs <- list()
+  for (jj in seq_along(dates)) {
+    date <- dates[jj]
+    window <- data[data$Date >= date & data$Date < date + time_window &
+                   data$New_cases > 0 & data$InFlow_Weight > 0, , drop=FALSE]
+    for (group in groups) {
+      part <- window
+      if (!is.null(states)) {
+        reopened <- part$STFIPS %in% states
+        part <- part[if (group == "Reopen") reopened else !reopened, , drop=FALSE]
+      }
+      national <- switch(group, National="Lag7_Log_National_Cases",
+                         Reopen="Lag7_Log_National_Cases_Reopen", Close="Lag7_Log_National_Cases_Close")
+      formula1 <- as.formula(paste("Log_New_cases ~", xvar,
+        "+ Lag1_Log_New_cases + Is_Weekend + Population_density + Pct_Age_0_24 + Pct_Age_25_40 + Pct_Age_40_65 + Med_House_Income"))
+      formula2 <- as.formula(paste(xvar, "~", national,
+        "+ Lag8_Log_InFlow_Weight + Is_Weekend + Population_density + Employment_density + Lag7_PRCP_NEW + Lag7_TMAX + Pct_Age_0_24 + Pct_Age_25_40 + Pct_Age_40_65 + Med_House_Income + Pct_Black + Pct_White"))
+      needed <- unique(c(all.vars(formula1), all.vars(formula2)))
+      part <- part[complete.cases(part[, needed, drop=FALSE]), , drop=FALSE]
+      error_text <- ""
+      ok <- tryCatch({
+        if (!nrow(part)) stop("No complete observations")
+        fit <- as.psem(list(lm(formula1, data=part, na.action=na.fail),
+                            lm(formula2, data=part, na.action=na.fail)))
+        para <- coefs(fit, standardize="scale", intercepts=TRUE)
+        para$Date <- date
+        para$Significant_0_1 <- !is.na(para$P.Value) & para$P.Value < 0.1
+        coeff[[group]][[jj]] <- para
+        perf <- summary(fit, .progressBar=FALSE, rsq=TRUE)$R2
+        perf$Date <- date
+        perf$Evaluation <- "in_sample"
+        performance[[group]][[jj]] <- perf
+        TRUE
+      }, error=function(e) { error_text <<- conditionMessage(e); FALSE })
+      logs[[length(logs)+1]] <- data.frame(Date=date, Group=group,
+        Eligible=nrow(window), Complete=nrow(part), Success=ok, Error=error_text)
+    }
   }
-  All_corr_Reopen <- do.call(rbind.data.frame, All_corr_Reopen)
-  # PLOT COEFFI
-  All_corr_1_Reopen <- All_corr_Reopen[(All_corr_Reopen$Response == 'Log_New_cases') &
-                                         (All_corr_Reopen$Predictor == xvar) &
-                                         (All_corr_Reopen$Date > as.Date('2020-03-10')) &
-                                         (All_corr_Reopen$P.Value < 0.1),]
-  All_corr_1_Reopen <- na.omit(All_corr_1_Reopen)
-  rownames(All_corr_1_Reopen) <- NULL
-
-  All_corr_1_Reopen_1 <- All_corr_Reopen[(All_corr_Reopen$Response == xvar) &
-                                           (All_corr_Reopen$Predictor == 'Lag7_Log_National_Cases') &
-                                           (All_corr_Reopen$Date > as.Date('2020-03-10')) &
-                                           (All_corr_Reopen$P.Value < 0.1),]
-  All_corr_1_Reopen_1 <- na.omit(All_corr_1_Reopen_1)
-  rownames(All_corr_1_Reopen_1) <- NULL
-
-  list_result <- list(All_corr_Reopen, All_corr_1_Reopen, All_corr_1_Reopen_1, All_perform)
-  return(list_result)
+  write.csv(do.call(rbind, logs), if (is.null(states)) "National_fit_status.csv" else "Split_fit_status.csv", row.names=FALSE)
+  empty <- data.frame(Date=as.Date(character()), Response=character(), Predictor=character(),
+                      Estimate=numeric(), Std.Error=numeric(), P.Value=numeric())
+  for (group in groups) {
+    coeff[[group]] <- if (length(coeff[[group]])) do.call(rbind, coeff[[group]]) else empty
+  }
+  if (is.null(states)) return(list(coeff$National,
+    curve(coeff$National, dates, "Log_New_cases", xvar),
+    curve(coeff$National, dates, xvar, "Lag7_Log_National_Cases"), performance$National))
+  list(coeff$Reopen, coeff$Close,
+    curve(coeff$Reopen, dates, "Log_New_cases", xvar),
+    curve(coeff$Close, dates, "Log_New_cases", xvar),
+    curve(coeff$Reopen, dates, xvar, "Lag7_Log_National_Cases_Reopen"),
+    curve(coeff$Close, dates, xvar, "Lag7_Log_National_Cases_Close"),
+    performance$Reopen, performance$Close)
+}
+All_State_SEM_Panel <- function(Max_Day, Agg_Trips_1, time_window, xvar) {
+  fit_panel_windows(Max_Day, Agg_Trips_1, time_window, xvar)
 }
 
 All_corr_ <- All_State_SEM_Panel(Max_Day, Agg_Trips_1, 7, xvar = 'Lag7_Log_InFlow_Weight')
@@ -145,7 +140,7 @@ ggplot(All_corr_[[2]], aes(x = Date, y = Estimate)) +
   geom_ribbon(aes(ymin = Estimate - Std.Error, ymax = Estimate + Std.Error), alpha = 0.2, colour = NA) +
   geom_line() +
   geom_point() +
-  labs(x = "Date", y = "Coeff") +
+  labs(x = "Date", y = "In-sample coefficient (±1 SE)") +
   theme_bw()
 
 #All_corr_date <- zoo(All_corr_[[2]]$Estimate, All_corr_[[2]]$Date)
@@ -164,7 +159,7 @@ write.csv(Inter_FLOW, 'National_interc_flow.csv')
 # How other coefficient looks like
 All_corr_Reopen <- All_corr_[[1]]
 All_corr_1_Reopen <- All_corr_Reopen[(All_corr_Reopen$Date > as.Date('2020-03-10')) &
-                                       (All_corr_Reopen$P.Value < 0.1),]
+                                       TRUE,]
 Coeff_Other <- select(All_corr_1_Reopen, Response, Predictor, Estimate) %>%
   group_by(Response, Predictor) %>%
   summarise_each(funs(mean, median, sd, min, max, sum(!is.na(.))))
@@ -172,138 +167,7 @@ write.csv(Coeff_Other, 'Coeff_Other.csv')
 
 # Split the state
 Split_State_SEM_Panel <- function(Max_Day, Agg_Trips_1, time_window, xvar, Idea_Reopen_State) {
-  # RUN LOOP
-  #Idea_Reopen_State <- c(51, 37, 27, 49, 4, 48, 12, 28, 01, 06, 19)
-  Agg_Trips_1$Is_ReopenState <- Agg_Trips_1$STFIPS %in% Idea_Reopen_State
-  All_corr_Reopen <- c()
-  All_corr_Close <- c()
-  All_perform <- c()
-  All_perform1 <- c()
-  Start_date <- as.Date('2020-03-10')
-  for (jj in (1:(Max_Day - 7))) {
-    print(jj)
-    skip_to_next <- FALSE
-    Agg_Trips_tem <- Agg_Trips_1[(Agg_Trips_1$Date <= Start_date + time_window) &
-                                   (Agg_Trips_1$Date > Start_date) &
-                                   (Agg_Trips_1$New_cases > 0) &
-                                   (Agg_Trips_1$InFlow_Weight > 0),]
-    Agg_Trips_tem <- select(Agg_Trips_tem, Log_New_cases, Lag7_Log_InFlow_Weight, Lag1_Log_New_cases, Is_Weekend,
-                            Population_density, Pct_Age_0_24, Pct_Age_25_40, Pct_Age_40_65, Med_House_Income,
-                            Lag7_Log_InFlow_Weight, Lag7_Log_National_Cases_Reopen, Lag7_Log_National_Cases_Close,
-                            Lag8_Log_InFlow_Weight, Employment_density, Lag7_PRCP_NEW, Lag7_TMAX,
-                            Pct_Black, Pct_White, Is_ReopenState, Week)
-
-    Agg_Trips_tem <- na.omit(Agg_Trips_tem)
-    nums <- unlist(lapply(Agg_Trips_tem, is.numeric))
-    rownames(Agg_Trips_tem) <- NULL
-    #Agg_Trips_tem$CTFIPS <- as.factor(Agg_Trips_tem$CTFIPS)
-    Reopen_tem <- Agg_Trips_tem[Agg_Trips_tem$Is_ReopenState,]
-    Close_tem <- Agg_Trips_tem[!Agg_Trips_tem$Is_ReopenState,]
-    tryCatch({
-      #Reopen_tem <- aggregate(Reopen_tem[,nums], list(Reopen_tem$CTFIPS), mean, na.action = na.omit)
-      #Close_tem <- aggregate(Close_tem[,nums], list(Close_tem$CTFIPS), mean, na.action = na.omit)
-      model.list <- list(
-        lm(Log_New_cases ~ 1 +
-          Lag7_Log_InFlow_Weight +
-          Lag1_Log_New_cases +
-          Is_Weekend +
-          Population_density +
-          Pct_Age_0_24 +
-          Pct_Age_25_40 +
-          Pct_Age_40_65 +
-          Med_House_Income, na.action = na.omit, data = Reopen_tem),
-        lm(Lag7_Log_InFlow_Weight ~ 1 +
-          Lag7_Log_National_Cases_Reopen +
-          Lag8_Log_InFlow_Weight +
-          Is_Weekend +
-          Population_density +
-          Employment_density +
-          Lag7_PRCP_NEW +
-          Lag7_TMAX +
-          Pct_Age_0_24 +
-          Pct_Age_25_40 +
-          Pct_Age_40_65 +
-          Med_House_Income +
-          Pct_Black +
-          Pct_White, na.action = na.omit, data = Reopen_tem))
-      model.list1 <- list(
-        lm(Log_New_cases ~ 1 +
-          Lag7_Log_InFlow_Weight +
-          Lag1_Log_New_cases +
-          Is_Weekend +
-          Population_density +
-          Pct_Age_0_24 +
-          Pct_Age_25_40 +
-          Pct_Age_40_65 +
-          Med_House_Income, na.action = na.omit, data = Close_tem),
-        lm(Lag7_Log_InFlow_Weight ~ 1 +
-          Lag7_Log_National_Cases_Close +
-          Lag8_Log_InFlow_Weight +
-          Is_Weekend +
-          Population_density +
-          Employment_density +
-          Lag7_PRCP_NEW +
-          Lag7_TMAX +
-          Pct_Age_0_24 +
-          Pct_Age_25_40 +
-          Pct_Age_40_65 +
-          Med_House_Income +
-          Pct_Black +
-          Pct_White, na.action = na.omit, data = Close_tem))
-
-      fit <- as.psem(model.list)  # ,orthogonal = TRUE,std.lv = TRUE
-      fit1 <- as.psem(model.list1)  # ,orthogonal = TRUE,std.lv = TRUE
-      new.summary <- summary(fit, .progressBar = F, rsq = T)
-      new.summary1 <- summary(fit1, .progressBar = F, rsq = T)
-      #anova(fit, fit.partial)
-      para <- coefs(fit, standardize = "scale", intercepts = TRUE)
-      para1 <- coefs(fit1, standardize = "scale", intercepts = TRUE)
-      para$Date <- Start_date
-      para1$Date <- Start_date
-      All_corr_Reopen[[jj]] <- para
-      All_corr_Close[[jj]] <- para1
-      All_perform[[jj]] <- new.summary$R2
-      All_perform1[[jj]] <- new.summary1$R2
-    },
-      error = function(e) { skip_to_next <<- TRUE })
-    Start_date <- Start_date + 1
-    if (skip_to_next) { next }
-  }
-  All_corr_Reopen <- do.call(rbind.data.frame, All_corr_Reopen)
-  All_corr_Close <- do.call(rbind.data.frame, All_corr_Close)
-
-  # PLOT COEFFI
-  # INFLOW--CASES
-  All_corr_1_Reopen <- All_corr_Reopen[(All_corr_Reopen$Response == 'Log_New_cases') &
-                                         (All_corr_Reopen$Predictor == xvar) &
-                                         (All_corr_Reopen$Date > as.Date('2020-03-10')) &
-                                         (All_corr_Reopen$P.Value < 0.1),]
-  All_corr_1_Reopen <- na.omit(All_corr_1_Reopen)
-  rownames(All_corr_1_Reopen) <- NULL
-  All_corr_1_Close <- All_corr_Close[(All_corr_Close$Response == 'Log_New_cases') &
-                                       (All_corr_Close$Predictor == xvar) &
-                                       (All_corr_Close$Date > as.Date('2020-03-10')) &
-                                       (All_corr_Close$P.Value < 0.1),]
-  All_corr_1_Close <- na.omit(All_corr_1_Close)
-  rownames(All_corr_1_Close) <- NULL
-
-  # CASES -- INFLOW
-  All_corr_2_Reopen <- All_corr_Reopen[(All_corr_Reopen$Response == xvar) &
-                                         (All_corr_Reopen$Predictor == 'Lag7_Log_National_Cases_Reopen') &
-                                         (All_corr_Reopen$Date > as.Date('2020-03-10')) &
-                                         (All_corr_Reopen$P.Value < 0.1),]
-  All_corr_2_Reopen <- na.omit(All_corr_2_Reopen)
-  rownames(All_corr_2_Reopen) <- NULL
-  All_corr_2_Close <- All_corr_Close[(All_corr_Close$Response == xvar) &
-                                       (All_corr_Close$Predictor == 'Lag7_Log_National_Cases_Close') &
-                                       (All_corr_Close$Date > as.Date('2020-03-10')) &
-                                       (All_corr_Close$P.Value < 0.1),]
-  All_corr_2_Close <- na.omit(All_corr_2_Close)
-  rownames(All_corr_2_Close) <- NULL
-
-  list_result <- list(All_corr_Reopen, All_corr_Close, All_corr_1_Reopen, All_corr_1_Close,
-                      All_corr_2_Reopen, All_corr_2_Close, All_perform, All_perform1)
-  return(list_result)
+  fit_panel_windows(Max_Day, Agg_Trips_1, time_window, xvar, Idea_Reopen_State)
 }
 
 # c(12, 6, 22, 13, 1, 17, 4, 47, 37, 45, 32, 51)
@@ -337,7 +201,7 @@ ggplot() +
   geom_errorbar(data = All_corr_[[4]], aes(x = Date, y = Estimate, ymin = Estimate - Std.Error, ymax = Estimate + Std.Error), width = 0.5) +
   geom_line(data = All_corr_[[4]], aes(x = Date, y = Estimate, colour = "Lock-Down"), size = 1) +
   geom_point(data = All_corr_[[4]], aes(x = Date, y = Estimate)) +
-  labs(x = "Date", y = "Coeff") +
+  labs(x = "Date", y = "In-sample coefficient (±1 SE)") +
   theme_bw()
 
 write.csv(All_corr_[[3]], 'Reopen.csv')
@@ -352,7 +216,7 @@ ggplot() +
   geom_errorbar(data = All_corr_[[6]], aes(x = Date, y = Estimate, ymin = Estimate - Std.Error, ymax = Estimate + Std.Error), width = 0.5) +
   geom_line(data = All_corr_[[6]], aes(x = Date, y = Estimate, colour = "Lock-Down"), size = 1) +
   geom_point(data = All_corr_[[6]], aes(x = Date, y = Estimate)) +
-  labs(x = "Date", y = "Coeff") +
+  labs(x = "Date", y = "In-sample coefficient (±1 SE)") +
   theme_bw()
 
 write.csv(All_corr_[[5]], 'Reopen_1.csv')
@@ -370,7 +234,7 @@ ggplot() +
   geom_errorbar(data = Inter_close, aes(x = Date, y = Estimate, ymin = Estimate - Std.Error, ymax = Estimate + Std.Error), width = 0.5) +
   geom_line(data = Inter_close, aes(x = Date, y = Estimate, colour = "Lock-Down"), size = 1) +
   geom_point(data = Inter_close, aes(x = Date, y = Estimate)) +
-  labs(x = "Date", y = "Coeff") +
+  labs(x = "Date", y = "In-sample coefficient (±1 SE)") +
   theme_bw()
 
 write.csv(Inter_open, 'Reopen_Inter_cases.csv')

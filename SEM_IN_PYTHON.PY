@@ -4,111 +4,88 @@ import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 from semopy import Model
-from semopy import Optimizer
-from semopy.inspector import inspect
 import matplotlib.dates as mdates
 
-os.chdir(r'D:\COVID-19\PNAS_SECOND')
+from pathlib import Path
 myFmt = mdates.DateFormatter('%b-%d')
 
 
 def sem_function(mod, Agg_Trips_tem, Start_date):
     model = Model(mod)
-    model.load_dataset(Agg_Trips_tem)
-    opt = Optimizer(model)
-    objective_function_value = opt.optimize()
-    coeff_tem = inspect(opt)
+    result = model.fit(Agg_Trips_tem)
+    if not result.success:
+        raise ValueError("SEM optimization failed: " + str(result.message))
+    coeff_tem = model.inspect().rename(columns={'Estimate': 'Value', 'Std. Err': 'SE', 'p-value': 'P-value'})
+    for col in ['Value', 'SE', 'P-value']:
+        coeff_tem[col] = pd.to_numeric(coeff_tem[col], errors='coerce')
     coeff_tem['Date'] = Start_date
     return coeff_tem
 
 
-def sem_all_state(Agg_Trips_1, mod, xvar, xvar_laglog):
-    Agg_Trips_1['Is_ReopenState'] = True  # If all states
-    # Moving-SEM
-    Agg_Trips_1 = Agg_Trips_1.sort_values(by=['CTFIPS', 'Date']).reset_index(drop=True)
-    Start_date = datetime.datetime(2020, 3, 10)
-    All_corr_Reopen = pd.DataFrame()
-    All_corr_Close = pd.DataFrame()
-    for jj in range(0, (max(Agg_Trips_1['Date']) - Start_date).days - 7):
-        print(jj)
-        Agg_Trips_tem = \
-            Agg_Trips_1[(Agg_Trips_1['Date'] <= Start_date + datetime.timedelta(time_window)) &
-                        (Agg_Trips_1['Date'] > Start_date) & (Agg_Trips_1['New_cases'] > 1 / 1e3)
-                        & (Agg_Trips_1[xvar] > 0.01)]
-        Agg_Trips_tem = Agg_Trips_tem.dropna().reset_index(drop=True)
-        Reopen_tem = Agg_Trips_tem[Agg_Trips_tem['Is_ReopenState']]
-        try:
-            coeff_tem0 = sem_function(mod, Reopen_tem, Start_date)
-            coeff_tem0['Date'] = Start_date
-            All_corr_Reopen = All_corr_Reopen.append(coeff_tem0)
-        except:
-            pass
-        Start_date = Start_date + datetime.timedelta(1)
-
-    All_corr_1_Reopen = All_corr_Reopen[
-        (All_corr_Reopen['lval'] == 'Log_New_cases') & (All_corr_Reopen['rval'] == xvar_laglog) & (
-                All_corr_Reopen['Date'] > datetime.datetime(2020, 3, 10)) & (All_corr_Reopen['P-value'] < 0.1)]
-    fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(8, 5))
-    ax.errorbar(All_corr_1_Reopen['Date'], All_corr_1_Reopen['Value'], All_corr_1_Reopen['SE'], fmt='-',
-                color='#10375c', capsize=1, markersize=0, alpha=0.8)
-    plt.ylabel('Coefficient (moving average)')
-    plt.xlabel('Date')
+def _moving_sem(data, mod, xvar, xvar_laglog, time_window, states=None, ntail=3000):
+    if isinstance(time_window, bool) or int(time_window) != time_window or time_window < 1:
+        raise ValueError("time_window must be a positive integer")
+    data = data.copy().sort_values(['CTFIPS', 'Date']).reset_index(drop=True)
+    if states is not None:
+        # Preserve the declared top-county study population and disclose it.
+        last = data[data.Date == data.Date.max()].sort_values('Agg_cases')
+        data = data[data.CTFIPS.isin(last.tail(ntail).CTFIPS)].copy()
+    start = pd.Timestamp('2020-03-10' if states is None else '2020-03-15')
+    groups = ['National'] if states is None else ['Reopen', 'Close']
+    frames = {group: [] for group in groups}
+    logs = []
+    for day in range(max(0, (data.Date.max() - start).days - int(time_window))):
+        date = start + pd.Timedelta(days=day)
+        window = data[(data.Date > date) & (data.Date <= date + pd.Timedelta(days=time_window))
+                      & (data.New_cases > 1 / 1e3) & (data[xvar] > .01)]
+        for group in groups:
+            part = window
+            if states is not None:
+                opened = part.STFIPS.isin(states)
+                part = part[opened if group == 'Reopen' else ~opened]
+            complete = part.dropna().reset_index(drop=True)
+            error = ''
+            try:
+                if complete.empty:
+                    raise ValueError('No complete observations')
+                coeff = sem_function(mod, complete, date)
+                success = True
+            except Exception as exc:
+                error = str(exc)
+                success = False
+                coeff = pd.DataFrame([{'lval': 'Log_New_cases', 'rval': xvar_laglog,
+                    'Value': np.nan, 'SE': np.nan, 'P-value': np.nan, 'Date': date}])
+            coeff['Significant_0_1'] = pd.to_numeric(coeff['P-value'], errors='coerce') < .1
+            frames[group].append(coeff)
+            logs.append(dict(Date=date, Group=group, Eligible=len(part), Complete=len(complete),
+                             Success=success, Error=error, Evaluation='in_sample'))
+    pd.DataFrame(logs).to_csv(('National' if states is None else 'Split') + '_python_fit_status.csv', index=False)
+    results = []
+    _, ax = plt.subplots(figsize=(8, 5))
+    for group in groups:
+        full = pd.concat(frames[group], ignore_index=True) if frames[group] else pd.DataFrame(
+            columns=['lval', 'rval', 'Date', 'Value', 'SE', 'P-value', 'Significant_0_1'])
+        selected = full[(full.lval == 'Log_New_cases') & (full.rval == xvar_laglog)]
+        ax.errorbar(selected.Date, selected.Value, selected.SE, fmt='-', label=group)
+        full.to_csv(group + '_python_coefficients.csv', index=False)
+        results.append(full)
+    ax.legend(frameon=False)
+    ax.set(xlabel='Date', ylabel='In-sample coefficient (±1 SE)')
     plt.tight_layout()
-    return All_corr_Reopen
+    return results
 
 
-def sem_split_state(Agg_Trips_1, mod, xvar, Idea_Reopen_State, xvar_laglog, ntail=3000):
-    # PICK TOP CASES
-    MAX_CT = Agg_Trips_1[Agg_Trips_1['Date'] == max(Agg_Trips_1['Date'])][['CTFIPS', 'Agg_cases']]
-    MAX_CT = MAX_CT.sort_values(by='Agg_cases').reset_index(drop=True)
-    Agg_Trips_11 = Agg_Trips_1[Agg_Trips_1['CTFIPS'].isin(MAX_CT.tail(ntail)['CTFIPS'])]
-    # SPLIT THE STATE
-    Agg_Trips_11['Is_ReopenState'] = Agg_Trips_11['STFIPS'].isin(Idea_Reopen_State)
-    # Moving-SEM
-    Agg_Trips_11 = Agg_Trips_11.sort_values(by=['CTFIPS', 'Date']).reset_index(drop=True)
-    Start_date = datetime.datetime(2020, 3, 15)
-    All_corr_Reopen = pd.DataFrame()
-    All_corr_Close = pd.DataFrame()
-    for jj in range(0, (max(Agg_Trips_11['Date']) - Start_date).days - 7):
-        print(jj)
-        Agg_Trips_tem = \
-            Agg_Trips_11[(Agg_Trips_11['Date'] <= Start_date + datetime.timedelta(time_window)) &
-                         (Agg_Trips_11['Date'] > Start_date) & (Agg_Trips_11['New_cases'] > 1 / 1e3)
-                         & (Agg_Trips_11[xvar] > 0.01)]
-        Agg_Trips_tem = Agg_Trips_tem.dropna().reset_index(drop=True)
-        Reopen_tem = Agg_Trips_tem[Agg_Trips_tem['Is_ReopenState']]
-        Close_tem = Agg_Trips_tem[~Agg_Trips_tem['Is_ReopenState']]
-        try:
-            coeff_tem0 = sem_function(mod, Reopen_tem, Start_date)
-            coeff_tem1 = sem_function(mod, Close_tem, Start_date)
-            coeff_tem0['Date'] = Start_date
-            All_corr_Reopen = All_corr_Reopen.append(coeff_tem0)
-            coeff_tem1['Date'] = Start_date
-            All_corr_Close = All_corr_Close.append(coeff_tem1)
-        except:
-            pass
-        Start_date = Start_date + datetime.timedelta(1)
+def sem_all_state(Agg_Trips_1, mod, xvar, xvar_laglog, time_window=7):
+    return _moving_sem(Agg_Trips_1, mod, xvar, xvar_laglog, time_window)[0]
 
-    All_corr_1_Reopen = All_corr_Reopen[
-        (All_corr_Reopen['lval'] == 'Log_New_cases') & (All_corr_Reopen['rval'] == xvar_laglog) & (
-                All_corr_Reopen['Date'] > datetime.datetime(2020, 3, 10)) & (All_corr_Reopen['P-value'] < 0.1)]
-    All_corr_1_Close = All_corr_Close[
-        (All_corr_Close['lval'] == 'Log_New_cases') & (All_corr_Close['rval'] == xvar_laglog) & (
-                All_corr_Close['Date'] > datetime.datetime(2020, 3, 14)) & (All_corr_Close['P-value'] < 0.1)]
-    fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(8, 5))
-    ax.errorbar(All_corr_1_Reopen['Date'], All_corr_1_Reopen['Value'], All_corr_1_Reopen['SE'], fmt='-',
-                color='#10375c', capsize=1, markersize=0, alpha=0.8)
-    ax.errorbar(All_corr_1_Close['Date'], All_corr_1_Close['Value'], All_corr_1_Close['SE'], fmt='-', color='#b83b5e',
-                capsize=1, markersize=0, alpha=0.8)
-    plt.legend(['"Reopened" counties', '"Locked-down" counties'], frameon=False)
-    plt.ylabel('Coefficient (moving average)')
-    plt.xlabel('Date')
-    plt.tight_layout()
-    return All_corr_Reopen, All_corr_Close
+
+def sem_split_state(Agg_Trips_1, mod, xvar, Idea_Reopen_State, xvar_laglog, ntail=3000, time_window=7):
+    return tuple(_moving_sem(Agg_Trips_1, mod, xvar, xvar_laglog, time_window,
+                            states=Idea_Reopen_State, ntail=ntail))
 
 
 # Read input data
-Agg_Trips_1 = pd.read_csv('All_XY_Features_To_R_County_Level_0731_toR.csv', index_col=0)
+Agg_Trips_1 = pd.read_csv(os.environ.get('PNAS_DATA_PATH', str(Path(__file__).resolve().parent / 'Data/All_XY_Features_To_R_County_Level_0731_toR.csv.gz')))
 Agg_Trips_1['Date'] = pd.to_datetime(Agg_Trips_1['Date'])
 Agg_Trips_1['CTFIPS'] = Agg_Trips_1['CTFIPS'].astype(str).apply(lambda x: x.zfill(5))
 

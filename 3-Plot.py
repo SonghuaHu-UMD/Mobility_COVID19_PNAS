@@ -34,8 +34,8 @@ ax.errorbar(All_corr_2['Date'], All_corr_2['Estimate'], All_corr_2['Std.Error'],
             capsize=0.2, markersize=0, alpha=0.5)
 
 plt.legend(
-    ['Nationwide (Coefficient and 95% CI)', '"Reopened" counties as of 05/01', '"Locked-down" counties',
-     '95% CI ("Reopened counties")', '95% CI ("Locked-down counties")'], frameon=False)
+    ['Nationwide (Coefficient and ±1 SE)', '"Reopened" counties as of 05/01', '"Locked-down" counties',
+     '±1 SE ("Reopened counties")', '±1 SE ("Locked-down counties")'], frameon=False)
 plt.ylabel('Coefficient (moving average)')
 plt.xlabel('Date')
 ax.plot([datetime.datetime(2020, 3, 13), datetime.datetime(2020, 3, 13)], [0.05, 0.35], '--', color='royalblue')

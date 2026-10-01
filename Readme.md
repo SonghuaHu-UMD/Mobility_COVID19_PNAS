@@ -30,3 +30,8 @@ To capture the time-varying relationship between the number of infection and mob
 * Other methods: BSTS 
 * Other variables: the risked inflow
 
+## Result calculation and rerun protocol
+
+Run the R scripts from the repository root. `PNAS_DATA_PATH` can override the included `Data/All_XY_Features_To_R_County_Level_0731_toR.csv.gz`. Coefficient curves include nonsignificant estimates and preserve failed dates as NA; significance is a separate field. National/Split fit-status CSVs record eligible/complete observations and failures independently by group. Python SEM functions accept an explicit positive `time_window` (default 7) and export their own status/complete-coefficient CSVs.
+
+Coefficient ribbons are labelled ±1 SE, matching the plotted calculation; they are not 95% confidence intervals. Lag plots show actual lags 0..30 and in-sample MAE ±1 SD. SEM lag predictions include the fitted intercept. Fit/residual metrics remain in-sample diagnostics, not held-out forecasts. Lag status files record every attempted window. Regenerate coefficient, lag and figure outputs; existing scientific results have not been recomputed by this code change.

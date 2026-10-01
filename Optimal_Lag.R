@@ -8,7 +8,7 @@ library(nlme)
 library(lme4)
 
 # Read DATA
-Agg_Trips_1 <- read.csv('D:/COVID-19/PNAS_SECOND/All_XY_Features_To_R_County_Level_0731_toR.csv')
+Agg_Trips_1 <- read.csv(Sys.getenv('PNAS_DATA_PATH', 'Data/All_XY_Features_To_R_County_Level_0731_toR.csv.gz'))
 Agg_Trips_1 <- Agg_Trips_1[with(Agg_Trips_1, order(CTFIPS, Date)),]
 Agg_Trips_1$Is_ReopenState <- TRUE
 Agg_Trips_1$Date <- as.Date(Agg_Trips_1$Date)
@@ -19,12 +19,14 @@ time_window <- 7
 # A function for all state
 All_State_SEM <- function(Max_Day, Agg_Trips_1, time_window, model, xvar) {
   # RUN LOOP
+  fit_status <- list()
   Start_date <- as.Date('2020-03-10')
   All_corr_Reopen <- c()
   All_Predict <- c()
-  for (jj in (1:(Max_Day - 7))) {
+  for (jj in (seq_len(max(0, Max_Day - time_window)))) {
     print(jj)
     skip_to_next <- FALSE
+    error_text <- ""
     Agg_Trips_tem <- Agg_Trips_1[(Agg_Trips_1$Date <= Start_date + time_window) &
                                    (Agg_Trips_1$Date > Start_date) &
                                    (Agg_Trips_1$New_cases > 0) &
@@ -32,29 +34,34 @@ All_State_SEM <- function(Max_Day, Agg_Trips_1, time_window, model, xvar) {
     Agg_Trips_tem <- na.omit(Agg_Trips_tem)
     rownames(Agg_Trips_tem) <- NULL
     tryCatch({
-               fit <- sem(model, data = Agg_Trips_tem) # ,orthogonal = TRUE,std.lv = TRUE
+               fit <- sem(model, data = Agg_Trips_tem, meanstructure = TRUE) # ,orthogonal = TRUE,std.lv = TRUE
                #anova(fit, fit.partial)
                para <- parameterEstimates(fit)
                # Predict the cases
                Beta <- para[(para$lhs == 'Log_New_cases') & (para$op == "~"), 'est']
                xNames <- para[(para$lhs == 'Log_New_cases') & (para$op == "~"), 'rhs']
-               Agg_Trips_tem$pred.cases <- c(as.matrix(Agg_Trips_tem[xNames]) %*% Beta)
+               Intercept <- para[para$lhs == "Log_New_cases" & para$op == "~1", "est"]
+               if (length(Intercept) != 1) stop("Missing fitted intercept")
+               Agg_Trips_tem$pred.cases <- Intercept + c(as.matrix(Agg_Trips_tem[xNames]) %*% Beta)
                para$Date <- Start_date
                All_corr_Reopen[[jj]] <- para
                All_Predict[[jj]] <- Agg_Trips_tem
              },
-             error = function(e) { skip_to_next <<- TRUE })
+             error = function(e) { skip_to_next <<- TRUE; error_text <<- conditionMessage(e) })
+    fit_status[[jj]] <- data.frame(Date=Start_date, N=nrow(Agg_Trips_tem), Success=!skip_to_next, Error=error_text, Evaluation="in_sample")
     Start_date <- Start_date + 1
     if (skip_to_next) { next }
   }
+  write.csv(do.call(rbind, fit_status), paste0("Lag_SEM_status_", attr(Agg_Trips_1, "lag_num"), ".csv"), row.names=FALSE)
+  if (!length(All_Predict)) stop("All lag windows failed; see fit status")
   All_corr_Reopen <- do.call(rbind.data.frame, All_corr_Reopen)
   All_predict <- do.call(rbind.data.frame, All_Predict)
   # PLOT COEFFI
   All_corr_1_Reopen <- All_corr_Reopen[(All_corr_Reopen$lhs == 'Log_New_cases') &
                                          (All_corr_Reopen$rhs == xvar) &
                                          (All_corr_Reopen$Date > as.Date('2020-03-10')) &
-                                         (All_corr_Reopen$pvalue < 0.1),]
-  All_corr_1_Reopen <- na.omit(All_corr_1_Reopen)
+                                         TRUE,]
+  All_corr_1_Reopen$Significant_0_1 <- !is.na(All_corr_1_Reopen$pvalue) & All_corr_1_Reopen$pvalue < 0.1
   rownames(All_corr_1_Reopen) <- NULL
   # Print RESIDUAL
   # Let <0 to 0
@@ -76,11 +83,12 @@ for (jj in (0:30)) {
   lag_data <- lag_data %>%
     group_by(CTFIPS) %>%
     filter((row_number() > 30))
+  attr(lag_data, "lag_num") <- jj
   All_corr_1 <- All_State_SEM(Max_Day, lag_data, time_window,
                               model = 'Log_New_cases ~ lag.value  + Is_Weekend  + Population_density  + Pct_Age_0_24 + Pct_Age_25_40 + Pct_Age_40_65',
                               xvar = 'lag.value')
   All_resid[[jj + 1]] <- All_corr_1[[4]]
-  All_corr_1[[2]]$LAG_NUM <- jj + 1
+  All_corr_1[[2]]$LAG_NUM <- jj
   All_resid_result[[jj + 1]] <- select(All_corr_1[[2]], pred.cases, Log_New_cases, LAG_NUM)
 }
 
@@ -98,10 +106,10 @@ Resid_summ <- All_resid2 %>%
   summarise_each(funs(mean, median, sd))
 
 ggplot(Resid_summ, aes(x = LAG_NUM, y = resid_mean)) +
-  geom_errorbar(aes(ymin = resid_mean - resid_sd * 0.05, ymax = resid_mean + resid_sd * 0.05), width = 0.5) +
+  geom_errorbar(aes(ymin = resid_mean - resid_sd, ymax = resid_mean + resid_sd), width = 0.5) +
   geom_line() +
   geom_point() +
-  labs(x = "Lag", y = "MAE") +
+  labs(x = "Lag", y = "In-sample MAE (±1 SD)") +
   theme_bw()
 
 ggplot(Resid_summ, aes(x = LAG_NUM, y = resid_mean)) +
@@ -113,11 +121,13 @@ ggplot(Resid_summ, aes(x = LAG_NUM, y = resid_mean)) +
 # A function for all state
 All_State_SEM_Panel_Lag <- function(Max_Day, Agg_Trips_1, time_window) {
   # RUN LOOP
+  fit_status <- list()
   All_resid <- c()
   Start_date <- as.Date('2020-03-10')
-  for (jj in (1:(Max_Day - 7))) {
+  for (jj in (seq_len(max(0, Max_Day - time_window)))) {
     print(jj)
     skip_to_next <- FALSE
+    error_text <- ""
     Agg_Trips_tem <- Agg_Trips_1[(Agg_Trips_1$Date <= Start_date + time_window) &
                                    (Agg_Trips_1$Date > Start_date) &
                                    (Agg_Trips_1$New_cases > 0) &
@@ -135,14 +145,17 @@ All_State_SEM_Panel_Lag <- function(Max_Day, Agg_Trips_1, time_window) {
                    Med_House_Income, random = ~1 | CTFIPS, na.action = na.omit, data = Agg_Trips_tem))
                fit <- as.psem(model.list) # ,orthogonal = TRUE,std.lv = TRUE
                #new.summary <- summary(fit, .progressBar = F)
-               resi <- data.frame(residuals(fit))
+               resi <- data.frame(Log_New_cases_residuals = as.numeric(residuals(model.list[[1]])))
                #anova(fit, fit.partial)
                All_resid[[jj]] <- resi
              },
-             error = function(e) { skip_to_next <<- TRUE })
+             error = function(e) { skip_to_next <<- TRUE; error_text <<- conditionMessage(e) })
+    fit_status[[jj]] <- data.frame(Date=Start_date, N=nrow(Agg_Trips_tem), Success=!skip_to_next, Error=error_text, Evaluation="in_sample")
     Start_date <- Start_date + 1
     if (skip_to_next) { next }
   }
+  write.csv(do.call(rbind, fit_status), paste0("Lag_panel_status_", attr(Agg_Trips_1, "lag_num"), ".csv"), row.names=FALSE)
+  if (!length(All_resid)) stop("All lag windows failed; see fit status")
   All_resid <- do.call(rbind.data.frame, All_resid)
   return(All_resid)
 }
@@ -158,8 +171,9 @@ for (jj in (0:30)) {
   lag_data <- lag_data %>%
     group_by(CTFIPS) %>%
     filter((row_number() > 30))
+  attr(lag_data, "lag_num") <- jj
   All_corr_1 <- All_State_SEM_Panel_Lag(Max_Day, lag_data, time_window)
-  All_corr_1$LAG_NUM <- jj + 1
+  All_corr_1$LAG_NUM <- jj
   All_resid[[jj + 1]] <- All_corr_1
 }
 
@@ -172,14 +186,14 @@ Resid_summ <- All_resid1 %>%
   group_by(LAG_NUM) %>%
   summarise_each(funs(mean, median, sd))
 
-ggplot(Resid_summ, aes(x = LAG_NUM, y = median)) +
+ggplot(Resid_summ, aes(x = LAG_NUM, y = Log_New_cases_residuals_mean)) +
   geom_line() +
   geom_point() +
   theme_bw()
 
-ggplot(Resid_summ, aes(x = LAG_NUM, y = median)) +
-  geom_errorbar(aes(ymin = median - sd, ymax = median + sd), width = 0) +
+ggplot(Resid_summ, aes(x = LAG_NUM, y = Log_New_cases_residuals_mean)) +
+  geom_errorbar(aes(ymin = Log_New_cases_residuals_mean - Log_New_cases_residuals_sd, ymax = Log_New_cases_residuals_mean + Log_New_cases_residuals_sd), width = 0) +
   geom_line() +
   geom_point() +
-  labs(x = "Date", y = "Coeff") +
+  labs(x = "Lag (days)", y = "In-sample MAE (±1 SD)") +
   theme_bw()
